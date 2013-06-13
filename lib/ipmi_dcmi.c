@@ -447,6 +447,7 @@ ipmi_dcmi_prnt_oobDiscover(struct ipmi_intf * intf)
 {
     struct ipmi_rs *rsp;
     int rc;
+    int len;
 
     if (intf->opened == 0 && intf->open != NULL) {
         if (intf->open(intf) < 0)
@@ -460,6 +461,9 @@ ipmi_dcmi_prnt_oobDiscover(struct ipmi_intf * intf)
     #else
 
     struct ipmi_session *s;
+    struct addrinfo hints;
+    struct addrinfo *result, *rp;
+    char service[NI_MAXSERV];
 
     if (intf == NULL || intf->session == NULL)
         return -1;
@@ -481,38 +485,57 @@ ipmi_dcmi_prnt_oobDiscover(struct ipmi_intf * intf)
 
     intf->abort = 1;
     intf->session->sol_data.sequence_number = 1;
-    
-    /* open port to BMC */
-    memset(&s->addr, 0, sizeof(struct sockaddr_in));
-    s->addr.sin_family = AF_INET;
-    s->addr.sin_port = htons(s->port);
 
-    rc = inet_pton(AF_INET, (const char *)s->hostname, &s->addr.sin_addr);
-    if (rc <= 0) {
-        struct hostent *host = gethostbyname((const char *)s->hostname);
-        if (host == NULL) {
-            lprintf(LOG_ERR, "Address lookup for %s failed",
-                s->hostname);
-            return -1;
-        }
-        s->addr.sin_family = host->h_addrtype;
-        memcpy(&s->addr.sin_addr, host->h_addr, host->h_length);
+    /* open port to BMC */
+
+    sprintf(service, "%d", s->port);
+    /* Obtain address(es) matching host/port */
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family   = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
+    hints.ai_socktype = SOCK_DGRAM;   /* Datagram socket */
+    hints.ai_flags    = AI_NUMERICSERV;
+    hints.ai_protocol = IPPROTO_UDP; /*  */
+
+    /* Remove hooks */
+    if (*s->hostname == '[') {
+        len = strlen(s->hostname);
+        memmove(s->hostname, s->hostname+1, len-2);
+        s->hostname[len-2] = '\0';
     }
 
-    lprintf(LOG_DEBUG, "IPMI LAN host %s port %d",
-        s->hostname, ntohs(s->addr.sin_port));
-
-    intf->fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (intf->fd < 0) {
-        lperror(LOG_ERR, "Socket failed");
+    if (getaddrinfo(s->hostname, service, &hints, &result) != 0) {
+        lprintf(LOG_ERR, "Address lookup for %s failed",
+            s->hostname);
         return -1;
     }
 
-    /* connect to UDP socket so we get async errors */
-    rc = connect(intf->fd, (struct sockaddr *)&s->addr,
-             sizeof(struct sockaddr_in));
-    if (rc < 0) {
-        lperror(LOG_ERR, "Connect failed");
+    /* getaddrinfo() returns a list of address structures.
+     * Try each address until we successfully connect(2).
+     * If socket(2) (or connect(2)) fails, we (close the socket
+     * and) try the next address. 
+     */
+    for (rp = result; rp != NULL; rp = rp->ai_next) {
+        intf->fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+        if (intf->fd == -1)
+            continue;
+
+        if (connect(intf->fd, rp->ai_addr, rp->ai_addrlen) != -1) {
+            s->addr = malloc(rp->ai_addrlen);
+            memcpy(s->addr, rp->ai_addr, rp->ai_addrlen);
+            s->addrlen = rp->ai_addrlen;
+            break;  /* Success */
+        }
+
+        close(intf->fd);
+        intf->fd = -1;
+    }
+
+    /* No longer needed */
+    freeaddrinfo(result);           
+
+    if (intf->fd < 0) {
+        lperror(LOG_ERR, "Connect to %s failed",
+            s->hostname);
         intf->close(intf);
         return -1;
     }

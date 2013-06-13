@@ -428,7 +428,7 @@ ipmi_tsol_main(struct ipmi_intf * intf, int argc, char ** argv)
 	sin.sin_port = htons(port);
 
 	result = inet_pton(AF_INET, (const char *)intf->session->hostname,
-			   &intf->session->addr.sin_addr);
+			   &((struct sockaddr_in *)(intf->session->addr))->sin_addr);
 
 	if (result <= 0) {
 		struct hostent *host = gethostbyname((const char *)intf->session->hostname);
@@ -437,8 +437,8 @@ ipmi_tsol_main(struct ipmi_intf * intf, int argc, char ** argv)
 				intf->session->hostname);
 			return -1;
 		}
-		intf->session->addr.sin_family = host->h_addrtype;
-		memcpy(&intf->session->addr.sin_addr, host->h_addr, host->h_length);
+		((struct sockaddr_in *)intf->session->addr)->sin_family = host->h_addrtype;
+		memcpy(&((struct sockaddr_in *)intf->session->addr)->sin_addr, host->h_addr, host->h_length);
 	}
 
 	fd_socket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);

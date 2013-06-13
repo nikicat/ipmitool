@@ -169,11 +169,11 @@ ipmi_intf_session_set_hostname(struct ipmi_intf * intf, char * hostname)
 	if (intf->session == NULL)
 		return;
 
-	memset(intf->session->hostname, 0, 16);
+	memset(intf->session->hostname, 0, 256);
 
 	if (hostname != NULL) {
 		memcpy(intf->session->hostname, hostname,
-		       __min(strlen(hostname), 64));
+		       __min(strlen(hostname), 255));
 	}
 }
 

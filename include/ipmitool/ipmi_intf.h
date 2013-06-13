@@ -63,7 +63,7 @@ enum LANPLUS_SESSION_STATE {
 #define IPMI_KG_BUFFER_SIZE       21 /* key plus null byte */
 
 struct ipmi_session {
-	uint8_t hostname[64];
+	uint8_t hostname[256];
 	uint8_t username[17];
 	uint8_t authcode[IPMI_AUTHCODE_BUFFER_SIZE + 1];
 	uint8_t challenge[16];
@@ -89,7 +89,7 @@ struct ipmi_session {
 	uint32_t out_seq;
 	uint32_t timeout;
 
-	struct sockaddr_in addr;
+	struct sockaddr *addr;
 	socklen_t addrlen;
 
 	/*
@@ -167,6 +167,7 @@ struct ipmi_intf {
 	int noanswer;
 	IPMI_OEM manufacturer_id;
 
+	void* pWinSession;
 	struct ipmi_session * session;
 	struct ipmi_oem_handle * oem;
 	struct ipmi_cmd * cmdlist;
